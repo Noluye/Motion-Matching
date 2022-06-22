@@ -25,3 +25,5 @@ extern "C"
 #include "quat.h"
 #include "spring.h"
 #include "array.h"
+
+static inline Vector3 to_Vector3(vec3 v) { return Vector3{ v.x, v.y, v.z }; }

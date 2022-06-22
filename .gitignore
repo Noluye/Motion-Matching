@@ -8,3 +8,9 @@ controller.wasm
 *.bvh
 *.log
 resources/runs*
+
+.vs/
+bin/
+bin-int/
+*.vcxproj*
+*.sln

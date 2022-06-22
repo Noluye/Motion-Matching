@@ -1,8 +1,8 @@
 #include "mmpch.h"
 #include "core.h"
 
+#pragma region HelperFunc
 //--------------------------------------
-
 // Perform linear blend skinning and copy 
 // result into mesh data. Update and upload 
 // deformed vertex positions and normals to GPU
@@ -978,6 +978,7 @@ quat clamp_character_rotation(
 		return character_rotation;
 	}
 }
+#pragma endregion
 
 //--------------------------------------
 
@@ -1011,6 +1012,7 @@ int main(void)
 	float camera_altitude = 0.4f;
 	float camera_distance = 4.0f;
 
+#pragma region Initialize
 	// Scene Obstacles
 
 	array1d<vec3> obstacles_positions(3);
@@ -1197,7 +1199,7 @@ int main(void)
 	float clamping_max_distance = 0.15f;
 	float clamping_max_angle = 0.5f * PIf;
 
-	contact_init(bone_positions, bone_velocities, bone_rotations, bone_angular_velocities, db.bone_parents);
+	contacts_reset(bone_positions, bone_velocities, bone_rotations, bone_angular_velocities, db.bone_parents);
 
 	array1d<vec3> adjusted_bone_positions = bone_positions;
 	array1d<quat> adjusted_bone_rotations = bone_rotations;
@@ -1220,6 +1222,7 @@ int main(void)
 	array1d<float> features_curr = db.features(frame_index);
 	array1d<float> latent_proj(32); latent_proj.zero();
 	array1d<float> latent_curr(32); latent_curr.zero();
+#pragma endregion
 
 	// Go
 
@@ -1227,7 +1230,7 @@ int main(void)
 
 	auto update_func = [&]()
 	{
-
+#pragma region Update
 		// Get gamepad stick states
 		vec3 gamepadstick_left = gamepad_get_stick(GAMEPAD_STICK_LEFT);
 		vec3 gamepadstick_right = gamepad_get_stick(GAMEPAD_STICK_RIGHT);
@@ -1685,7 +1688,7 @@ int main(void)
 		adjusted_bone_positions = bone_positions;
 		adjusted_bone_rotations = bone_rotations;
 
-		ik_contact_update(global_bone_positions,
+		contacts_update(global_bone_positions,
 			global_bone_rotations,
 			global_bone_computed,
 			bone_positions,
@@ -1719,6 +1722,7 @@ int main(void)
 			gamepadstick_right,
 			desired_strafe,
 			dt);
+#pragma endregion
 
 		// Render
 
@@ -1726,7 +1730,7 @@ int main(void)
 		ClearBackground(RAYWHITE);
 
 		BeginMode3D(camera);
-
+#pragma region Draw3D
 		// Draw Simulation Object
 
 		DrawCylinderWires(to_Vector3(simulation_position), 0.6f, 0.6f, 0.001f, 17, ORANGE);
@@ -1755,7 +1759,7 @@ int main(void)
 		}
 
 		// Draw IK foot lock positions
-		if (ik_enabled) draw_foot_lock_positions();
+		if (ik_enabled) contacts_draw();
 
 		draw_trajectory(
 			trajectory_positions,
@@ -1792,13 +1796,12 @@ int main(void)
 		DrawModel(ground_plane_model, Vector3{ 0.0f, -0.01f, 0.0f }, 1.0f, WHITE);
 		DrawGrid(20, 1.0f);
 		draw_axis(vec3(), quat());
+#pragma endregion
 
 		EndMode3D();
 
 		// UI
-
-		//---------
-
+#pragma region UI
 		float ui_sim_hei = 20;
 
 		GuiGroupBox(Rectangle{ 970, ui_sim_hei, 290, 250 }, "simulation object");
@@ -2018,7 +2021,7 @@ int main(void)
 		// Foot locking needs resetting when IK is toggled
 		if (ik_enabled && !ik_enabled_prev)
 		{
-			foot_lock_reset(bone_positions,
+			contacts_reset(bone_positions,
 				bone_velocities,
 				bone_rotations,
 				bone_angular_velocities,
@@ -2037,7 +2040,7 @@ int main(void)
 			TextFormat("%5.3f", ik_unlock_radius),
 			ik_unlock_radius, 0.0f, 0.5f);
 
-		//---------
+#pragma endregion
 
 		EndDrawing();
 
@@ -2062,4 +2065,4 @@ int main(void)
 	CloseWindow();
 
 	return 0;
-	}
+}

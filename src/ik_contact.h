@@ -8,18 +8,6 @@ extern float ik_toe_length;
 extern float ik_unlock_radius;
 extern float ik_blending_halflife;
 
-// Contact and Foot Locking data
-extern array1d<int> contact_bones;
-
-extern array1d<bool> contact_states;
-extern array1d<bool> contact_locks;
-extern array1d<vec3> contact_positions;
-extern array1d<vec3> contact_velocities;
-extern array1d<vec3> contact_points;
-extern array1d<vec3> contact_targets;
-extern array1d<vec3> contact_offset_positions;
-extern array1d<vec3> contact_offset_velocities;
-
 // Rotate a joint to look toward some 
 // given target position
 void ik_look_at(
@@ -47,24 +35,21 @@ void ik_two_bone(
 	const quat bone_par_gr,
 	const float max_length_buffer);
 
-void foot_lock_reset(const slice1d<vec3> bone_positions,
+/// <summary>
+/// set contacts' positions and velocity to current bone's positions and velocity
+/// </summary>
+/// <param name="bone_positions"></param>
+/// <param name="bone_velocities"></param>
+/// <param name="bone_rotations"></param>
+/// <param name="bone_angular_velocities"></param>
+/// <param name="bone_parents"></param>
+void contacts_reset(const slice1d<vec3> bone_positions,
 	const slice1d<vec3> bone_velocities,
 	const slice1d<quat> bone_rotations,
 	const slice1d<vec3> bone_angular_velocities,
 	const slice1d<int> bone_parents);
 
-void contact_init(const slice1d<vec3> bone_positions,
-	const slice1d<vec3> bone_velocities,
-	const slice1d<quat> bone_rotations,
-	const slice1d<vec3> bone_angular_velocities,
-	const slice1d<int> bone_parents);
-
-void contact_reset(int i,
-	const vec3 input_contact_position,
-	const vec3 input_contact_velocity,
-	const bool input_contact_state = false);
-
-void ik_contact_update(array1d<vec3>& global_bone_positions,
+void contacts_update(array1d<vec3>& global_bone_positions,
 	array1d<quat>& global_bone_rotations,
 	array1d<bool>& global_bone_computed,
 	array1d<vec3>& bone_positions,
@@ -75,4 +60,4 @@ void ik_contact_update(array1d<vec3>& global_bone_positions,
 	const slice1d<int> bone_parents,
 	float dt);
 
-void draw_foot_lock_positions();
+void contacts_draw();

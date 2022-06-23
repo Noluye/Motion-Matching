@@ -10,6 +10,10 @@ float ik_toe_length = 0.15f;
 float ik_unlock_radius = 0.2f;
 float ik_blending_halflife = 0.1f;
 
+std::vector<Contact> contacts = {
+	{Bone_LeftToe}, {Bone_RightToe}
+};
+
 static inline bool is_contact_point_too_far_from_cur_pos(const vec3& p1, const vec3& p2)
 {
 	// If the contact point is too far from the current input position 
@@ -17,189 +21,96 @@ static inline bool is_contact_point_too_far_from_cur_pos(const vec3& p1, const v
 	return length(p1 - p2) > ik_unlock_radius;
 }
 
-struct Contact
+
+void Contact::reset(const vec3 pos, const vec3 vel, const bool state)
 {
-	int index = -1;
+	prev_position = fixed_point = position = pos;;
+	velocity = vel;
+	lock = prev_state = state;
+	offset_velocity = offset_position = vec3();
+}
 
-	bool prev_state = false;
-	bool lock = false;
-
-	vec3 position;
-	vec3 prev_position; // prev glbPos for toe
-	vec3 fixed_point;
-
-	vec3 velocity;
-
-	vec3 offset_position;
-	vec3 offset_velocity;
-
-	Contact(int index_) { index = index_; }
-
-	void reset(vec3 position_, vec3 velocity_, const bool state = false)
-	{
-		prev_state = state;
-		lock = state;
-
-		position = position_;
-		fixed_point = position_;
-		prev_position = position_;
-
-		velocity = velocity_;
-
-		offset_position = vec3();
-		offset_velocity = vec3();
-	}
-
-	void update(
-		const vec3 cur_position,
-		const bool cur_state,
-		const float dt,
-		const float eps = 1e-8)
-	{
-
-		// First compute the input contact position velocity via finite difference
-		vec3 cur_velocity = (cur_position - prev_position) / (dt + eps);
-		prev_position = cur_position;
-
-		// Update the inertializer to tick forward in time
-		inertialize_update(
-			position,
-			velocity,
-			offset_position,
-			offset_velocity,
-			// If locked we feed the contact point and zero velocity, 
-			// otherwise we feed the input from the animation
-			lock ? fixed_point : cur_position,
-			lock ? vec3() : cur_velocity,
-			ik_blending_halflife,
-			dt);
-
-		// If the contact was previously inactive but is now active we 
-		// need to transition to the locked contact state
-		if (!prev_state && cur_state)
-		{
-			// Contact point is given by the current position of 
-			// the foot projected onto the ground plus foot height
-			lock = true;
-			fixed_point = position;
-			fixed_point.y = ik_foot_height;
-
-			inertialize_transition(
-				offset_position,
-				offset_velocity,
-				cur_position,
-				cur_velocity,
-				fixed_point,
-				vec3());
-		}
-
-		// Otherwise if we need to unlock or we were previously in 
-		// contact but are no longer we transition to just taking 
-		// the input position as-is
-		else if (lock && (
-			(prev_state && !cur_state) ||
-			is_contact_point_too_far_from_cur_pos(fixed_point, cur_position)
-			))
-		{
-			lock = false;
-
-			inertialize_transition(
-				offset_position,
-				offset_velocity,
-				fixed_point,
-				vec3(),
-				cur_position,
-				cur_velocity);
-		}
-
-		// Update contact state
-		prev_state = cur_state;
-	}
-
-	void draw()
-	{
-		if (lock) DrawSphereWires(to_Vector3(position), 0.05f, 4, 10, PINK);
-	}
-};
-
-static std::vector<Contact> contacts = {
-	{Bone_LeftToe}, {Bone_RightToe}
-};
-
-void ik_look_at(
-	quat& bone_rotation,
-	const quat global_parent_rotation,
-	const quat global_rotation,
-	const vec3 global_position,
-	const vec3 child_position,
-	const vec3 target_position,
+void Contact::update(
+	const vec3 cur_position,
+	const bool cur_state,
+	const float dt,
 	const float eps)
 {
-	vec3 curr_dir = normalize(child_position - global_position);
-	vec3 targ_dir = normalize(target_position - global_position);
 
-	if (fabs(1.0f - dot(curr_dir, targ_dir) > eps))
+	// First compute the input contact position velocity via finite difference
+	vec3 cur_velocity = (cur_position - prev_position) / (dt + eps);
+	prev_position = cur_position;
+
+	// Update the inertializer to tick forward in time
+	// Input: offset_position & offset_position(will be updated)
+	// Input: fixed_point/cur_position
+	// Input: vec3()/cur_velocity
+	inertialize_update(
+		position,
+		velocity,
+		offset_position,
+		offset_velocity,
+		// If locked we feed the contact point and zero velocity, 
+		// otherwise we feed the input from the animation
+		lock ? fixed_point : cur_position,
+		lock ? vec3() : cur_velocity,
+		ik_blending_halflife,
+		dt);
+
+	// If the contact was previously inactive but is now active we 
+	// need to transition to the locked contact state
+	if (!prev_state && cur_state)
 	{
-		bone_rotation = quat_inv_mul(global_parent_rotation,
-			quat_mul(quat_between(curr_dir, targ_dir), global_rotation));
+		// Contact point is given by the current position of 
+		// the foot projected onto the ground plus foot height
+		lock = true;
+		fixed_point = position;
+		fixed_point.y = ik_foot_height;
+
+		inertialize_transition(
+			offset_position,
+			offset_velocity,
+			cur_position,
+			cur_velocity,
+			fixed_point,
+			vec3());
 	}
+
+	// Otherwise if we need to unlock or we were previously in 
+	// contact but are no longer we transition to just taking 
+	// the input position as-is
+	else if (lock && (
+		(prev_state && !cur_state) ||
+		// If the contact point is too far from the current input position
+		// then we need to unlock the contact
+		length(fixed_point - cur_position) > ik_unlock_radius 
+		))
+	{
+		lock = false;
+
+		inertialize_transition(
+			offset_position,
+			offset_velocity,
+			fixed_point,
+			vec3(),
+			cur_position,
+			cur_velocity);
+	}
+
+	// Update contact state
+	prev_state = cur_state;
 }
 
-void ik_two_bone(
-	quat& bone_root_lr,
-	quat& bone_mid_lr,
-	const vec3 bone_root,
-	const vec3 bone_mid,
-	const vec3 bone_end,
-	const vec3 target,
-	const vec3 fwd,
-	const quat bone_root_gr,
-	const quat bone_mid_gr,
-	const quat bone_par_gr,
-	const float max_length_buffer) {
-
-	float max_extension =
-		length(bone_root - bone_mid) +
-		length(bone_mid - bone_end) -
-		max_length_buffer;
-
-	vec3 target_clamp = target;
-	if (length(target - bone_root) > max_extension)
-	{
-		target_clamp = bone_root + max_extension * normalize(target - bone_root);
-	}
-
-	vec3 axis_dwn = normalize(bone_end - bone_root);
-	vec3 axis_rot = normalize(cross(axis_dwn, fwd));
-
-	vec3 a = bone_root;
-	vec3 b = bone_mid;
-	vec3 c = bone_end;
-	vec3 t = target_clamp;
-
-	float lab = length(b - a);
-	float lcb = length(b - c);
-	float lat = length(t - a);
-
-	float ac_ab_0 = acosf(clampf(dot(normalize(c - a), normalize(b - a)), -1.0f, 1.0f));
-	float ba_bc_0 = acosf(clampf(dot(normalize(a - b), normalize(c - b)), -1.0f, 1.0f));
-
-	float ac_ab_1 = acosf(clampf((lab * lab + lat * lat - lcb * lcb) / (2.0f * lab * lat), -1.0f, 1.0f));
-	float ba_bc_1 = acosf(clampf((lab * lab + lcb * lcb - lat * lat) / (2.0f * lab * lcb), -1.0f, 1.0f));
-
-	quat r0 = quat_from_angle_axis(ac_ab_1 - ac_ab_0, axis_rot);
-	quat r1 = quat_from_angle_axis(ba_bc_1 - ba_bc_0, axis_rot);
-
-	vec3 c_a = normalize(bone_end - bone_root);
-	vec3 t_a = normalize(target_clamp - bone_root);
-
-	quat r2 = quat_from_angle_axis(
-		acosf(clampf(dot(c_a, t_a), -1.0f, 1.0f)),
-		normalize(cross(c_a, t_a)));
-
-	bone_root_lr = quat_inv_mul(bone_par_gr, quat_mul(r2, quat_mul(r0, bone_root_gr)));
-	bone_mid_lr = quat_inv_mul(bone_root_gr, quat_mul(r1, bone_mid_gr));
+void Contact::draw()
+{
+	if (lock) DrawSphereWires(to_Vector3(position), 0.05f, 4, 10, PINK);
 }
+
+
+
+
+// ------------------------------------------------------------
+// contacts
 
 void contacts_reset(const slice1d<vec3> bone_positions,
 	const slice1d<vec3> bone_velocities,
@@ -360,4 +271,80 @@ void contacts_update(array1d<vec3>& global_bone_positions,
 void contacts_draw()
 {
 	for (auto& contact : contacts) contact.draw();
+}
+// ------------------------------------------------------------
+// IK
+void ik_look_at(
+	quat& bone_rotation,
+	const quat global_parent_rotation,
+	const quat global_rotation,
+	const vec3 global_position,
+	const vec3 child_position,
+	const vec3 target_position,
+	const float eps)
+{
+	vec3 curr_dir = normalize(child_position - global_position);
+	vec3 targ_dir = normalize(target_position - global_position);
+
+	if (fabs(1.0f - dot(curr_dir, targ_dir) > eps))
+	{
+		bone_rotation = quat_inv_mul(global_parent_rotation,
+			quat_mul(quat_between(curr_dir, targ_dir), global_rotation));
+	}
+}
+
+void ik_two_bone(
+	quat& bone_root_lr,
+	quat& bone_mid_lr,
+	const vec3 bone_root,
+	const vec3 bone_mid,
+	const vec3 bone_end,
+	const vec3 target,
+	const vec3 fwd,
+	const quat bone_root_gr,
+	const quat bone_mid_gr,
+	const quat bone_par_gr,
+	const float max_length_buffer) {
+
+	float max_extension =
+		length(bone_root - bone_mid) +
+		length(bone_mid - bone_end) -
+		max_length_buffer;
+
+	vec3 target_clamp = target;
+	if (length(target - bone_root) > max_extension)
+	{
+		target_clamp = bone_root + max_extension * normalize(target - bone_root);
+	}
+
+	vec3 axis_dwn = normalize(bone_end - bone_root);
+	vec3 axis_rot = normalize(cross(axis_dwn, fwd));
+
+	vec3 a = bone_root;
+	vec3 b = bone_mid;
+	vec3 c = bone_end;
+	vec3 t = target_clamp;
+
+	float lab = length(b - a);
+	float lcb = length(b - c);
+	float lat = length(t - a);
+
+	float ac_ab_0 = acosf(clampf(dot(normalize(c - a), normalize(b - a)), -1.0f, 1.0f));
+	float ba_bc_0 = acosf(clampf(dot(normalize(a - b), normalize(c - b)), -1.0f, 1.0f));
+
+	float ac_ab_1 = acosf(clampf((lab * lab + lat * lat - lcb * lcb) / (2.0f * lab * lat), -1.0f, 1.0f));
+	float ba_bc_1 = acosf(clampf((lab * lab + lcb * lcb - lat * lat) / (2.0f * lab * lcb), -1.0f, 1.0f));
+
+	quat r0 = quat_from_angle_axis(ac_ab_1 - ac_ab_0, axis_rot);
+	quat r1 = quat_from_angle_axis(ba_bc_1 - ba_bc_0, axis_rot);
+
+	vec3 c_a = normalize(bone_end - bone_root);
+	vec3 t_a = normalize(target_clamp - bone_root);
+
+	quat r2 = quat_from_angle_axis(
+		acosf(clampf(dot(c_a, t_a), -1.0f, 1.0f)),
+		normalize(cross(c_a, t_a)));
+
+	bone_root_lr = quat_inv_mul(bone_par_gr, quat_mul(r2, quat_mul(r0, bone_root_gr)));
+	bone_mid_lr = quat_inv_mul(bone_root_gr, quat_mul(r1, bone_mid_gr));
 }

@@ -8,6 +8,40 @@ extern float ik_toe_length;
 extern float ik_unlock_radius;
 extern float ik_blending_halflife;
 
+
+/// <summary>
+/// prev_position: only store to calculate velocity
+/// </summary>
+struct Contact
+{
+	int index = -1;
+
+	bool prev_state = false;
+	bool lock = false;
+
+	vec3 position;
+	vec3 prev_position;
+	vec3 fixed_point;
+
+	vec3 velocity;
+
+	vec3 offset_position;
+	vec3 offset_velocity;
+
+	Contact(int index_) { index = index_; }
+
+	void reset(const vec3 pos, const vec3 vel, const bool state = false);
+
+	void update(
+		const vec3 cur_position,
+		const bool cur_state,
+		const float dt,
+		const float eps = 1e-8);
+
+	void draw();
+};
+
+
 // Rotate a joint to look toward some 
 // given target position
 void ik_look_at(

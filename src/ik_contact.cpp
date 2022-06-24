@@ -14,17 +14,9 @@ std::vector<Contact> contacts = {
 	{Bone_LeftToe}, {Bone_RightToe}
 };
 
-static inline bool is_contact_point_too_far_from_cur_pos(const vec3& p1, const vec3& p2)
-{
-	// If the contact point is too far from the current input position 
-	// then we need to unlock the contact
-	return length(p1 - p2) > ik_unlock_radius;
-}
-
-
 void Contact::reset(const vec3 pos, const vec3 vel, const bool state)
 {
-	prev_position = fixed_point = position = pos;;
+	prev_position = fixed_point = position = pos;
 	velocity = vel;
 	lock = prev_state = state;
 	offset_velocity = offset_position = vec3();

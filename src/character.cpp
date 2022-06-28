@@ -86,3 +86,53 @@ void linear_blend_skinning_normals(
 	}
 }
 
+void deform_character_mesh(
+	Mesh& mesh,
+	const character& c,
+	const slice1d<vec3> bone_anim_positions,
+	const slice1d<quat> bone_anim_rotations,
+	const slice1d<int> bone_parents)
+{
+	linear_blend_skinning_positions(
+		slice1d<vec3>(mesh.vertexCount, (vec3*)mesh.vertices),
+		c.positions,
+		c.bone_weights,
+		c.bone_indices,
+		c.bone_rest_positions,
+		c.bone_rest_rotations,
+		bone_anim_positions,
+		bone_anim_rotations);
+
+	linear_blend_skinning_normals(
+		slice1d<vec3>(mesh.vertexCount, (vec3*)mesh.normals),
+		c.normals,
+		c.bone_weights,
+		c.bone_indices,
+		c.bone_rest_rotations,
+		bone_anim_rotations);
+
+	UpdateMeshBuffer(mesh, 0, mesh.vertices, mesh.vertexCount * 3 * sizeof(float), 0);
+	UpdateMeshBuffer(mesh, 2, mesh.normals, mesh.vertexCount * 3 * sizeof(float), 0);
+}
+
+
+Mesh make_character_mesh(character& c)
+{
+	Mesh mesh = { 0 };
+
+	mesh.vertexCount = c.positions.size;
+	mesh.triangleCount = c.triangles.size / 3;
+	mesh.vertices = (float*)MemAlloc(c.positions.size * 3 * sizeof(float));
+	mesh.texcoords = (float*)MemAlloc(c.texcoords.size * 2 * sizeof(float));
+	mesh.normals = (float*)MemAlloc(c.normals.size * 3 * sizeof(float));
+	mesh.indices = (unsigned short*)MemAlloc(c.triangles.size * sizeof(unsigned short));
+
+	memcpy(mesh.vertices, c.positions.data, c.positions.size * 3 * sizeof(float));
+	memcpy(mesh.texcoords, c.texcoords.data, c.texcoords.size * 2 * sizeof(float));
+	memcpy(mesh.normals, c.normals.data, c.normals.size * 3 * sizeof(float));
+	memcpy(mesh.indices, c.triangles.data, c.triangles.size * sizeof(unsigned short));
+
+	UploadMesh(&mesh, true);
+
+	return mesh;
+}

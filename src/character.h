@@ -69,3 +69,15 @@ void linear_blend_skinning_normals(
     const slice1d<quat> bone_rest_rotations,
     const slice1d<quat> bone_anim_rotations);
 
+//--------------------------------------
+// Perform linear blend skinning and copy 
+// result into mesh data. Update and upload 
+// deformed vertex positions and normals to GPU
+void deform_character_mesh(
+    Mesh& mesh,
+    const character& c,
+    const slice1d<vec3> bone_anim_positions,
+    const slice1d<quat> bone_anim_rotations,
+    const slice1d<int> bone_parents);
+
+Mesh make_character_mesh(character& c);

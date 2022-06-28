@@ -2,252 +2,8 @@
 #include "core.h"
 
 #pragma region HelperFunc
-//--------------------------------------
-// Perform linear blend skinning and copy 
-// result into mesh data. Update and upload 
-// deformed vertex positions and normals to GPU
-void deform_character_mesh(
-	Mesh& mesh,
-	const character& c,
-	const slice1d<vec3> bone_anim_positions,
-	const slice1d<quat> bone_anim_rotations,
-	const slice1d<int> bone_parents)
-{
-	linear_blend_skinning_positions(
-		slice1d<vec3>(mesh.vertexCount, (vec3*)mesh.vertices),
-		c.positions,
-		c.bone_weights,
-		c.bone_indices,
-		c.bone_rest_positions,
-		c.bone_rest_rotations,
-		bone_anim_positions,
-		bone_anim_rotations);
-
-	linear_blend_skinning_normals(
-		slice1d<vec3>(mesh.vertexCount, (vec3*)mesh.normals),
-		c.normals,
-		c.bone_weights,
-		c.bone_indices,
-		c.bone_rest_rotations,
-		bone_anim_rotations);
-
-	UpdateMeshBuffer(mesh, 0, mesh.vertices, mesh.vertexCount * 3 * sizeof(float), 0);
-	UpdateMeshBuffer(mesh, 2, mesh.normals, mesh.vertexCount * 3 * sizeof(float), 0);
-}
-
-Mesh make_character_mesh(character& c)
-{
-	Mesh mesh = { 0 };
-
-	mesh.vertexCount = c.positions.size;
-	mesh.triangleCount = c.triangles.size / 3;
-	mesh.vertices = (float*)MemAlloc(c.positions.size * 3 * sizeof(float));
-	mesh.texcoords = (float*)MemAlloc(c.texcoords.size * 2 * sizeof(float));
-	mesh.normals = (float*)MemAlloc(c.normals.size * 3 * sizeof(float));
-	mesh.indices = (unsigned short*)MemAlloc(c.triangles.size * sizeof(unsigned short));
-
-	memcpy(mesh.vertices, c.positions.data, c.positions.size * 3 * sizeof(float));
-	memcpy(mesh.texcoords, c.texcoords.data, c.texcoords.size * 2 * sizeof(float));
-	memcpy(mesh.normals, c.normals.data, c.normals.size * 3 * sizeof(float));
-	memcpy(mesh.indices, c.triangles.data, c.triangles.size * sizeof(unsigned short));
-
-	UploadMesh(&mesh, true);
-
-	return mesh;
-}
 
 //--------------------------------------
-
-// Basic functionality to get gamepad input including deadzone and 
-// squaring of the stick location to increase sensitivity. To make 
-// all the other code that uses this easier, we assume stick is 
-// oriented on floor (i.e. y-axis is zero)
-
-enum
-{
-	GAMEPAD_PLAYER = 0,
-};
-
-enum
-{
-	GAMEPAD_STICK_LEFT,
-	GAMEPAD_STICK_RIGHT,
-};
-
-vec3 gamepad_get_stick(int stick, const float deadzone = 0.2f)
-{
-	float gamepadx = GetGamepadAxisMovement(GAMEPAD_PLAYER, stick == GAMEPAD_STICK_LEFT ? GAMEPAD_AXIS_LEFT_X : GAMEPAD_AXIS_RIGHT_X);
-	float gamepady = GetGamepadAxisMovement(GAMEPAD_PLAYER, stick == GAMEPAD_STICK_LEFT ? GAMEPAD_AXIS_LEFT_Y : GAMEPAD_AXIS_RIGHT_Y);
-	float gamepadmag = sqrtf(gamepadx * gamepadx + gamepady * gamepady);
-
-	if (gamepadmag > deadzone)
-	{
-		float gamepaddirx = gamepadx / gamepadmag;
-		float gamepaddiry = gamepady / gamepadmag;
-		float gamepadclippedmag = gamepadmag > 1.0f ? 1.0f : gamepadmag * gamepadmag;
-		gamepadx = gamepaddirx * gamepadclippedmag;
-		gamepady = gamepaddiry * gamepadclippedmag;
-	}
-	else
-	{
-		gamepadx = 0.0f;
-		gamepady = 0.0f;
-	}
-
-	return vec3(gamepadx, 0.0f, gamepady);
-}
-
-//--------------------------------------
-
-float orbit_camera_update_azimuth(
-	const float azimuth,
-	const vec3 gamepadstick_right,
-	const bool desired_strafe,
-	const float dt)
-{
-	vec3 gamepadaxis = desired_strafe ? vec3() : gamepadstick_right;
-	return azimuth + 2.0f * dt * -gamepadaxis.x;
-}
-
-float orbit_camera_update_altitude(
-	const float altitude,
-	const vec3 gamepadstick_right,
-	const bool desired_strafe,
-	const float dt)
-{
-	vec3 gamepadaxis = desired_strafe ? vec3() : gamepadstick_right;
-	return clampf(altitude + 2.0f * dt * gamepadaxis.z, 0.0, 0.4f * PIf);
-}
-
-float orbit_camera_update_distance(
-	const float distance,
-	const float dt)
-{
-	float gamepadzoom =
-		IsGamepadButtonDown(GAMEPAD_PLAYER, GAMEPAD_BUTTON_LEFT_TRIGGER_1) ? +1.0f :
-		IsGamepadButtonDown(GAMEPAD_PLAYER, GAMEPAD_BUTTON_RIGHT_TRIGGER_1) ? -1.0f : 0.0f;
-
-	return clampf(distance + 10.0f * dt * gamepadzoom, 0.1f, 100.0f);
-}
-
-// Updates the camera using the orbit cam controls
-void orbit_camera_update(
-	Camera3D& cam,
-	float& camera_azimuth,
-	float& camera_altitude,
-	float& camera_distance,
-	const vec3 target,
-	const vec3 gamepadstick_right,
-	const bool desired_strafe,
-	const float dt)
-{
-	camera_azimuth = orbit_camera_update_azimuth(camera_azimuth, gamepadstick_right, desired_strafe, dt);
-	camera_altitude = orbit_camera_update_altitude(camera_altitude, gamepadstick_right, desired_strafe, dt);
-	camera_distance = orbit_camera_update_distance(camera_distance, dt);
-
-	quat rotation_azimuth = quat_from_angle_axis(camera_azimuth, vec3(0, 1, 0));
-	vec3 position = quat_mul_vec3(rotation_azimuth, vec3(0, 0, camera_distance));
-	vec3 axis = normalize(cross(position, vec3(0, 1, 0)));
-
-	quat rotation_altitude = quat_from_angle_axis(camera_altitude, axis);
-
-	vec3 eye = target + quat_mul_vec3(rotation_altitude, position);
-
-	cam.target = Vector3{ target.x, target.y, target.z };
-	cam.position = Vector3{ eye.x, eye.y, eye.z };
-
-	UpdateCamera(&cam);
-}
-
-//--------------------------------------
-
-bool desired_strafe_update()
-{
-	return IsGamepadButtonDown(GAMEPAD_PLAYER, GAMEPAD_BUTTON_LEFT_TRIGGER_2) > 0.5f;
-}
-
-void desired_gait_update(
-	float& desired_gait,
-	float& desired_gait_velocity,
-	const float dt,
-	const float gait_change_halflife = 0.1f)
-{
-	simple_spring_damper_implicit(
-		desired_gait,
-		desired_gait_velocity,
-		IsGamepadButtonDown(GAMEPAD_PLAYER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN) ? 1.0f : 0.0f,
-		gait_change_halflife,
-		dt);
-}
-
-vec3 desired_velocity_update(
-	const vec3 gamepadstick_left,
-	const float camera_azimuth,
-	const quat simulation_rotation,
-	const float fwrd_speed,
-	const float side_speed,
-	const float back_speed)
-{
-	// Find stick position in world space by rotating using camera azimuth
-	vec3 global_stick_direction = quat_mul_vec3(
-		quat_from_angle_axis(camera_azimuth, vec3(0, 1, 0)), gamepadstick_left);
-
-	// Find stick position local to current facing direction
-	vec3 local_stick_direction = quat_inv_mul_vec3(
-		simulation_rotation, global_stick_direction);
-
-	// Scale stick by forward, sideways and backwards speeds
-	vec3 local_desired_velocity = local_stick_direction.z > 0.0 ?
-		vec3(side_speed, 0.0f, fwrd_speed) * local_stick_direction :
-		vec3(side_speed, 0.0f, back_speed) * local_stick_direction;
-
-	// Re-orientate into the world space
-	return quat_mul_vec3(simulation_rotation, local_desired_velocity);
-}
-
-quat desired_rotation_update(
-	const quat desired_rotation,
-	const vec3 gamepadstick_left,
-	const vec3 gamepadstick_right,
-	const float camera_azimuth,
-	const bool desired_strafe,
-	const vec3 desired_velocity)
-{
-	quat desired_rotation_curr = desired_rotation;
-
-	// If strafe is active then desired direction is coming from right
-	// stick as long as that stick is being used, otherwise we assume
-	// forward facing
-	if (desired_strafe)
-	{
-		vec3 desired_direction = quat_mul_vec3(quat_from_angle_axis(camera_azimuth, vec3(0, 1, 0)), vec3(0, 0, -1));
-
-		if (length(gamepadstick_right) > 0.01f)
-		{
-			desired_direction = quat_mul_vec3(quat_from_angle_axis(camera_azimuth, vec3(0, 1, 0)), normalize(gamepadstick_right));
-		}
-
-		return quat_from_angle_axis(atan2f(desired_direction.x, desired_direction.z), vec3(0, 1, 0));
-	}
-
-	// If strafe is not active the desired direction comes from the left 
-	// stick as long as that stick is being used
-	else if (length(gamepadstick_left) > 0.01f)
-	{
-
-		vec3 desired_direction = normalize(desired_velocity);
-		return quat_from_angle_axis(atan2f(desired_direction.x, desired_direction.z), vec3(0, 1, 0));
-	}
-
-	// Otherwise desired direction remains the same
-	else
-	{
-		return desired_rotation_curr;
-	}
-}
-
-//--------------------------------------
-
 // Moving the root is a little bit difficult when we have the
 // inertializer set up in the way we do. Essentially we need
 // to also make sure to adjust all of the locations where 
@@ -1150,9 +906,6 @@ int main(void)
 	vec3 desired_rotation_change_prev;
 	float desired_rotation_change_threshold = 50.0;
 
-	float desired_gait = 0.0f;
-	float desired_gait_velocity = 0.0f;
-
 	vec3 simulation_position;
 	vec3 simulation_velocity;
 	vec3 simulation_acceleration;
@@ -1225,19 +978,11 @@ int main(void)
 #pragma endregion
 
 	// Go
-
 	float dt = 1.0f / 60.0f;
 
 	auto update_func = [&]()
 	{
 #pragma region Update
-		// Get gamepad stick states
-		vec3 gamepadstick_left = gamepad_get_stick(GAMEPAD_STICK_LEFT);
-		vec3 gamepadstick_right = gamepad_get_stick(GAMEPAD_STICK_RIGHT);
-
-		// Get if strafe is desired
-		bool desired_strafe = desired_strafe_update();
-
 		// Get the desired gait (walk / run)
 		desired_gait_update(
 			desired_gait,
@@ -1249,6 +994,10 @@ int main(void)
 		float simulation_side_speed = lerpf(simulation_run_side_speed, simulation_walk_side_speed, desired_gait);
 		float simulation_back_speed = lerpf(simulation_run_back_speed, simulation_walk_back_speed, desired_gait);
 
+		// Get gamepad stick states
+		vec3 gamepadstick_left = gamepad_get_stick(GAMEPAD_STICK_LEFT);
+		vec3 gamepadstick_right = gamepad_get_stick(GAMEPAD_STICK_RIGHT);
+
 		// Get the desired velocity
 		vec3 desired_velocity_curr = desired_velocity_update(
 			gamepadstick_left,
@@ -1257,6 +1006,9 @@ int main(void)
 			simulation_fwrd_speed,
 			simulation_side_speed,
 			simulation_back_speed);
+
+		// Get if strafe is desired
+		bool desired_strafe = desired_strafe_update();
 
 		// Get the desired rotation/direction
 		quat desired_rotation_curr = desired_rotation_update(
